@@ -1,0 +1,7 @@
+.ipynb_checkpoints
+best_model
+data
+logs
+models
+*.pickle
+*jpg
