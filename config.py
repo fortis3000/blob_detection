@@ -17,6 +17,14 @@ TEST_ANNOTATION_PATH = os.path.join(
     DATAPATH, "test_annotations", "test_labels.json"
 )
 
+# Prediction
+# TODO: replace with CLI params
+SAMPLE = "val"
+MODEL_PATH = os.path.join("models", BACKBONE, "h5")
+IMAGE_FOLDER = os.path.join(DATAPATH, f"{SAMPLE}")
+MASK_FOLDER = os.path.join(DATAPATH, f"{SAMPLE}_masks")
+OUTPUT_MASK_FOLDER = os.path.join(DATAPATH, f"{SAMPLE}_masks_pred")
+
 # model params
 CLASSES = ["bulk"]
 # binary and multiclass segmentation
