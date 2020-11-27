@@ -37,7 +37,8 @@ if __name__ == "__main__":
 
         for num, pred in enumerate(preds):
             Predictor.save_image(
-                pred,                os.path.join(
+                pred,
+                os.path.join(
                     OUTPUT_MASK_FOLDER, f'{mask.split(".")[0]}_{num}.jpg'
                 ),
             )

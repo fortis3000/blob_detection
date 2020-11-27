@@ -5,11 +5,7 @@ import pickle
 import cv2
 import numpy as np
 
-from dataset import (
-    visualize,
-    denormalize,
-    Dataset,
-)
+from dataset import visualize, denormalize, Dataset
 from config import (
     BACKBONE,
     activation,
@@ -19,31 +15,18 @@ from config import (
     MASK_FOLDER,
     OUTPUT_MASK_FOLDER,
 )
-from blob_detector import (
-    BlobDetector,
-    SkimageBlobDetector,
-)
+from blob_detector import BlobDetector, SkimageBlobDetector
 
 
 class Predictor:
-    def __init__(
-        self,
-        model,
-        if_crop: bool,
-        width: int,
-        height: int,
-    ):
+    def __init__(self, model, if_crop: bool, width: int, height: int):
         self.model = model
         self.if_crop = if_crop
         self.width = width
         self.height = height
 
     @classmethod
-    def crop(
-        cls,
-        image: np.ndarray,
-        size: tuple,
-    ):
+    def crop(cls, image: np.ndarray, size: tuple):
         """
         Cuts image into pieces with the size provided from left to right,
         from up to bottom.
@@ -56,10 +39,7 @@ class Predictor:
         assert image.shape[0] > size[0], f"Image is too small {image.shape}"
         assert image.shape[1] > size[1], f"Image is too small {image.shape}"
 
-        (
-            height,
-            width,
-        ) = image.shape[:2]
+        height, width = image.shape[:2]
 
         pad_horizontal = width % size[0] > 0
         pad_vertical = height % size[1] > 0
@@ -125,33 +105,17 @@ class Predictor:
         :return:
         """
 
-        keypoints = detector.detect(
-            image,
-            ext_params=ext_params,
-        )
+        keypoints = detector.detect(image, ext_params=ext_params)
         return keypoints
 
     @classmethod
-    def save_image(
-        cls,
-        image: np.array,
-        filename: str,
-    ):
+    def save_image(cls, image: np.array, filename: str):
         if image.max() > 1:
-            cv2.imwrite(
-                filename,
-                image,
-            )
+            cv2.imwrite(filename, image)
         else:
-            cv2.imwrite(
-                filename,
-                255 * image,
-            )
+            cv2.imwrite(filename, 255 * image)
 
-    def predict(
-        self,
-        image: np.array,
-    ):
+    def predict(self, image: np.array):
         """
         Predict white masks of objects detected
         :param image: np array
@@ -160,12 +124,7 @@ class Predictor:
             Predicted mask
         """
         return self.model.predict(
-            image.reshape(
-                1,
-                self.height,
-                self.width,
-                -1,
-            )
+            image.reshape(1, self.height, self.width, -1)
         ).squeeze(axis=0)
 
     def predict_dataset(
@@ -178,29 +137,8 @@ class Predictor:
     ):
         elements_count = len(dataset)
         for i in range(elements_count):
-            (
-                image,
-                mask_true,
-            ) = dataset[i]
+            image, mask_true = dataset[i]
 
-            # cut large images and masks into pieces
-            # from top LEFT to bottom RIGHT
-            # TODO: WARNING!
-            # IT CAUSES MEMORY LEAK IN CASE THE AMOUNT OF PICTURES IS TOO LARGE
-            # images = (
-            #     self.crop(image, (self.height, self.width))
-            #     if self.if_crop
-            #     else [image]
-            # )
-            # masks = (
-            #     self.crop(mask_true, (self.height, self.width))
-            #     if self.if_crop
-            #     else [mask_true]
-            # )
-
-            # iterate over small images
-            # pairs = list(zip(images, masks))
-            # for num, (image, mask_true) in enumerate(pairs):
             # mask_pred is an np array of shape (256, 256, 1)
             # with values in range(0,1)
             mask_pred = (self.predict(image) * 255).astype(np.uint8)
@@ -213,12 +151,10 @@ class Predictor:
 
             # find blobs on prediction
             if if_blobs:
-
                 detector = SkimageBlobDetector(images=None)
                 try:
                     with open(
-                        f"best_blob_params_{detector.name}.pickle",
-                        "rb",
+                        f"best_blob_params_{detector.name}.pickle", "rb"
                     ) as f:
                         ext_params = pickle.load(f)
                         ext_params.pop("binary_threshold")
@@ -278,11 +214,7 @@ if __name__ == "__main__":
 
     model = Unet(
         backbone_name=BACKBONE,
-        input_shape=(
-            None,
-            None,
-            3,
-        ),
+        input_shape=(None, None, 3),
         classes=1,
         activation=activation,
         encoder_weights=None,  # 'imagenet',
@@ -303,10 +235,7 @@ if __name__ == "__main__":
     )
 
     if SAMPLE == "test":
-        with open(
-            "best_blob_params_skimage.pickle",
-            "rb",
-        ) as f:
+        with open("best_blob_params_skimage.pickle", "rb") as f:
             binary_threshold = pickle.load(f)["binary_threshold"]
     else:
         binary_threshold = None
