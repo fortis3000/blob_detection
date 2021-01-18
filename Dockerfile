@@ -12,3 +12,5 @@ RUN pip install segmentation-models opencv-python
 RUN pip install --upgrade tensorflow-gpu
 RUN pip install albumentations
 RUN pip install hyperopt
+
+WORKDIR /bulk_detection

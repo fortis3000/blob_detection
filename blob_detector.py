@@ -30,10 +30,14 @@ class BlobDetector:
         return np.mean((y_true - y_pred) ** 2)
 
     def _MAPE(self, y_pred, y_true):
-        """Simplified MAPE"""
+        """
+        Simplified MAPE
+        Strictly counts errors on empty images
+        """
         y_true, y_pred = np.array(y_true), np.array(y_pred)
-        with_nans = (y_true - y_pred) / y_true
-        with_nans[with_nans != with_nans] = 0
+        y_true_without_nulls = y_true.copy()
+        y_true_without_nulls[y_true_without_nulls == 0] = 1
+        with_nans = (y_true - y_pred) / y_true_without_nulls
         return np.mean(np.abs(with_nans)) * 100
 
     def _SMAPE(self, y_pred, y_true):
@@ -82,6 +86,9 @@ class OpenCVBlobDetector(BlobDetector):
             ),
             "binary_threshold": hp.choice(
                 "binary_threshold", list(range(128, 240))
+            ),
+            "noise_threshold": hp.choice(
+                "noise_threshold", list(range(20, 80))
             ),
         }
         self.params = {
@@ -150,7 +157,7 @@ class OpenCVBlobDetector(BlobDetector):
 
         counts = []
         for key in self.images:
-            print(key)
+            # print(key)
             image_array = cv2.imread(
                 os.path.join(OUTPUT_MASK_FOLDER, key), cv2.COLOR_RGB2GRAY
             )[..., ::-1]
@@ -160,20 +167,34 @@ class OpenCVBlobDetector(BlobDetector):
                 np.uint8
             )
 
+            # filter from little noise
+            image_array[image_array < params["noise_threshold"]] = 0
+
             # invert color only for detector
-            keypoints = detector.detect(255 - binary_mask)
+            keypoints = detector.detect(255 - image_array)  # binary_mask)
             counts.append(len(keypoints))
 
         print(
             f"Mean counts: {np.mean(counts):.2f},"
             f" Mean ground truth: {np.mean(true_labels):.2f}"
         )
-        return self._MAPE(counts, true_labels)
+        return self._MSE(counts, true_labels)
 
     def detect(self, image: np.array, ext_params: dict = None, **kwargs):
         detector = self.init_blob_detector(ext_params=ext_params)
         keypoints = detector.detect(image)
         return keypoints
+
+    def filter_keypoints(self, keypoints, min_radius: int, max_radius: int):
+
+        try:
+            return keypoints[
+                (keypoints[..., -1] >= min_radius)
+                & (keypoints[..., -1] <= max_radius)
+            ]
+        except Exception as e:
+            print(f"Filtering failed: {e}")
+            return keypoints
 
     def draw_blobs(self, image: np.array, keypoints: typing.List, **kwargs):
         """
@@ -196,29 +217,42 @@ class OpenCVBlobDetector(BlobDetector):
 
 
 class SkimageBlobDetector(BlobDetector):
+    """
+    Using Skimage library for blob detection
+    """
+
     def __init__(self, images: list = None):
         super(SkimageBlobDetector, self).__init__(images)
 
         self.name = "skimage"
+
         self.SPACE = {
-            "max_sigma": hp.choice("max_sigma", list(range(30, 50))),
-            "min_sigma": hp.choice("min_sigma", list(range(5, 30))),
-            "threshold": hp.uniform("threshold", 0.05, 0.5),
-            "overlap": hp.uniform("overlap", 0.05, 0.5),
-            "binary_threshold": hp.choice(
-                "binary_threshold", list(range(128, 240))
-            ),
+            "min_sigma": hp.choice("min_sigma", list(range(5, 9))),
+            "max_sigma": hp.choice("max_sigma", list(range(20, 30))),
+            "threshold": hp.uniform("threshold", 0.01, 0.1),
+            "overlap": hp.uniform("overlap", 0.01, 0.1),
         }
         self.params = {
-            "min_sigma": 4,
-            "max_sigma": 30,
-            "num_sigma": 10,
-            "threshold": 0.3,
-            "overlap": 0.2,
+            "min_sigma": 5,
+            "max_sigma": 9,
+            "num_sigma": 2,
+            "threshold": 0.01,
+            "overlap": 0.01,
         }
 
-    def review_methods(self, image_path):
-        image = cv2.imread(image_path, cv2.COLOR_RGB2GRAY)[..., ::-1]
+    def review_methods(self, image: np.array = None):
+
+        """
+        Draws a comparison picture of all three methods.
+        Doesn't work properly with binarized image.
+        :param image: np.array, str
+            Image array or image path
+        :return:
+        """
+
+        if isinstance(image, str):
+            image = cv2.imread(image, cv2.COLOR_RGB2GRAY)[..., ::-1]
+
         image_gray = rgb2gray(image)
 
         blobs_log = blob_log(
@@ -259,46 +293,53 @@ class SkimageBlobDetector(BlobDetector):
 
     def objective(self, params):
 
-        if not self.images:
+        if self.images is None:
             raise ValueError("Images not provided")
 
         counts = []
         for key in self.images:
-            print(key)
-            image_array = cv2.imread(
-                os.path.join(OUTPUT_MASK_FOLDER, key), cv2.COLOR_RGB2GRAY
-            )[..., ::-1]
-
-            image_array = (
-                (image_array > params["binary_threshold"]) * 255
-            ).astype(np.uint8)
 
             keypoints = blob_log(
-                image_array,
+                key,  # image_array,
                 max_sigma=params["max_sigma"],
                 min_sigma=params["min_sigma"],
                 threshold=params["threshold"],
                 overlap=params["overlap"],
-                num_sigma=2,
+                num_sigma=self.params["num_sigma"],
             )
+
             counts.append(self.count_blobs(keypoints))
 
         print(
             f"Mean counts: {np.mean(counts):.2f},"
             f" Mean ground truth: {np.mean(true_labels):.2f}"
         )
-        return self._MSE(counts, true_labels)
+        print(params)
 
-    def detect(self, image: np.array, ext_params: typing.Dict = None, **kwargs):
+        return self._MAPE(counts, true_labels)
+
+    def detect(self, image: np.array, ext_params: typing.Dict = {}, **kwargs):
         """
 
+        :param image:
         :param **kwargs:
         :type ext_params: typing.Dict
             Updates params of the detector
         """
+
+        # 3D into 2D convertion
+        image = image.mean(axis=-1) / 255
+
         updated_params = self._build_whole_configs(changed_params=ext_params)
         keypoints = blob_log(image, **updated_params)
         return keypoints
+
+    def filter_keypoints(self, keypoints, min_radius: int, max_radius: int):
+
+        return keypoints[
+            (keypoints[..., -1] >= min_radius)
+            & (keypoints[..., -1] <= max_radius)
+        ]
 
     def draw_blobs(self, image: np.array, keypoints: np.array, **kwargs):
         # make radius
@@ -307,7 +348,7 @@ class SkimageBlobDetector(BlobDetector):
         for blob in keypoints:
             # print(blob)
             if blob is not None:
-                y, x, _, r = blob
+                y, x, r = blob
                 cv2.circle(
                     img=image,
                     center=(int(x), int(y)),
@@ -343,18 +384,28 @@ if __name__ == "__main__":
             train_reader.get(key)["regions"]
         )
 
-    images_needed = sorted(os.listdir(OUTPUT_MASK_FOLDER))
+    images_needed = sorted(
+        os.listdir("data/raw/val_masks")
+    )  # sorted(os.listdir(OUTPUT_MASK_FOLDER))
 
     true_labels = [all_images[filename] for filename in images_needed]
 
+    np.save(file="true_label.npy", arr=np.array(true_labels))
+
+    images_np = np.load("pred_masks.npy")
+    threshold_np = 0.561
+    if threshold_np:
+        images_np[images_np < threshold_np] = 0
+
     # Detector learning
-    detector = SkimageBlobDetector(images=images_needed)
+    detector = SkimageBlobDetector(images=images_np)  # (images=images_needed)
+    # detector = OpenCVBlobDetector(images=images_needed)
 
     best = fmin(
         fn=detector.objective,
         space=detector.SPACE,
         algo=tpe.suggest,
-        max_evals=20,
+        max_evals=50,
     )
 
     with open(f"best_blob_params_{detector.name}.pickle", "wb") as f:

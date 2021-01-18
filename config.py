@@ -1,6 +1,7 @@
 import os
 
 BACKBONE = "efficientnetb3"  # backbones_factory.py
+MODELS_FOLDER = "models"
 
 # data params
 DATAPATH = os.path.join("data", "raw")
@@ -33,6 +34,6 @@ n_classes = 1 if len(CLASSES) == 1 else (len(CLASSES) + 1)
 activation = "relu" if n_classes == 1 else "softmax"
 
 # train params
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 LR = 0.001
-EPOCHS = 200
+EPOCHS = 100

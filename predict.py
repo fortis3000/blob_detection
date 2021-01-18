@@ -15,7 +15,7 @@ from config import (
     MASK_FOLDER,
     OUTPUT_MASK_FOLDER,
 )
-from blob_detector import BlobDetector, SkimageBlobDetector
+from blob_detector import BlobDetector, SkimageBlobDetector, OpenCVBlobDetector
 
 
 class Predictor:
@@ -152,16 +152,28 @@ class Predictor:
             # find blobs on prediction
             if if_blobs:
                 detector = SkimageBlobDetector(images=None)
+                # detector = OpenCVBlobDetector(images=None)
                 try:
                     with open(
                         f"best_blob_params_{detector.name}.pickle", "rb"
                     ) as f:
                         ext_params = pickle.load(f)
-                        ext_params.pop("binary_threshold")
 
                 except Exception as e:
                     print(e)
                     ext_params = {}
+
+                try:
+                    noise_threshold = ext_params.pop("noise_threshold")
+                    # filter little dark gray noise
+                    mask_pred[mask_pred < noise_threshold] = 0
+
+                    min_radius = ext_params.pop("min_radius")
+                    max_radius = ext_params.pop("max_radius")
+                except Exception as e:
+                    print("Params not found", e)
+                    min_radius = 0
+                    max_radius = np.inf
 
                 # invert colors only for detector
                 keypoints = self.detect_blobs(
@@ -171,9 +183,16 @@ class Predictor:
                     detector=detector,
                     ext_params=ext_params,
                 )
+
+                keypoints_filtered = detector.filter_keypoints(
+                    keypoints=keypoints,
+                    min_radius=min_radius,
+                    max_radius=max_radius,
+                )
+
                 mask_pred = detector.draw_blobs(
                     image=mask_pred,
-                    keypoints=keypoints,
+                    keypoints=keypoints_filtered,
                 )
 
             # obtaining filename for saving if needed
@@ -185,7 +204,7 @@ class Predictor:
                 output_folder if output_folder else "",
                 f"{base_name}"
                 f"{'_' + str(i) if self.if_crop else ''}"
-                f"{'_' + str(len(keypoints)) if if_blobs else ''}"
+                f"{'_' + str(len(keypoints_filtered)) if if_blobs else ''}"
                 f"{'_blobs' if if_blobs else ''}."
                 f"{file_format}",
             )
@@ -218,7 +237,7 @@ if __name__ == "__main__":
         classes=1,
         activation=activation,
         encoder_weights=None,  # 'imagenet',
-        weights=MODEL_PATH,
+        weights="models/2021-01-14_20:35:00_efficientnetb4/model.16-0.54.h5",  # MODEL_PATH,
     )
 
     predictor = Predictor(

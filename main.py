@@ -1,3 +1,6 @@
+import os
+import datetime as dt
+
 import matplotlib.pyplot as plt
 from segmentation_models import Unet
 from segmentation_models import get_preprocessing
@@ -12,6 +15,7 @@ from config import (
     VAL_IMAGE_FOLDER,
     VAL_MASK_FOLDER,
     BACKBONE,
+    MODELS_FOLDER,
     activation,
     BATCH_SIZE,
     CLASSES,
@@ -22,6 +26,11 @@ from dataloader import Dataloader
 from dataset import Dataset
 
 augmentor = Augmentor()
+
+
+def get_dt_str():
+    """Returns current date and time in string format"""
+    return str(dt.datetime.now()).split(".")[0].replace(" ", "_")
 
 
 def plot_history(history):
@@ -47,6 +56,12 @@ def plot_history(history):
     plt.close()
 
 
+DATESTRING = get_dt_str()
+
+CUR_MODEL_FOLDER = os.path.join(MODELS_FOLDER, DATESTRING + "_" + BACKBONE)
+
+os.mkdir(CUR_MODEL_FOLDER)
+
 preprocess_input = get_preprocessing(BACKBONE)
 
 model = Unet(
@@ -54,7 +69,7 @@ model = Unet(
     input_shape=(None, None, 3),
     classes=1,
     activation=activation,
-    encoder_weights=None,  # 'imagenet',
+    encoder_weights=None,  # 'imagenet', # None
     # encoder_features=[0, 1, 2],
     # encoder_freeze=False
 )
@@ -101,27 +116,44 @@ print(train_dataloader[0][1].shape)
 
 # assert train_dataloader[0][0].shape == (BATCH_SIZE, 256, 256, 3)
 # assert train_dataloader[0][1].shape == (BATCH_SIZE, 256, 256, n_classes)
-
 callbacks = [
-    keras.callbacks.ModelCheckpoint(
-        "./best_model/h5",
-        save_weights_only=True,
-        save_best_only=True,
+    keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        min_delta=0,
+        patience=15,
+        verbose=1,
         mode="min",
+        baseline=None,
+        restore_best_weights=True,
+    ),
+    keras.callbacks.ModelCheckpoint(
+        filepath=os.path.join(
+            CUR_MODEL_FOLDER, "model.{epoch:02d}-{val_loss:.2f}.h5"
+        ),
+        monitor="val_loss",
+        verbose=1,
+        save_best_only=True,
+        save_weights_only=True,
+        mode="min",
+        save_freq="epoch",
+        options=None,
     ),
     keras.callbacks.ReduceLROnPlateau(
         monitor="val_loss",
         factor=0.1,
-        patience=20,
+        patience=10,
         min_delta=0.0001,
         cooldown=0,
         min_lr=0.000001,
         verbose=1,
+        mode="min",
     ),
-    keras.callbacks.TensorBoard(log_dir="./logs"),
+    keras.callbacks.TensorBoard(log_dir=os.path.join("logs", DATESTRING)),
 ]
 
+
 if __name__ == "__main__":
+
     # fit model
     history = model.fit(
         train_dataloader,
@@ -132,4 +164,5 @@ if __name__ == "__main__":
         validation_steps=len(val_dataloader),
     )
 
-    plot_history(history)
+    # Saving trained model
+    model.save(CUR_MODEL_FOLDER)
